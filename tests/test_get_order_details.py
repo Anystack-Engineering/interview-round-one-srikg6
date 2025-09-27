@@ -1,27 +1,30 @@
 import json
 import re
 from jsonpath_ng import parse
-from tests.helper_functions import load_json_data, assert_true
+import pytest
 
 
-data = load_json_data()
-
-
-def test_order_identity():
-    expected_ids = {"A-1001", "A-1002", "A-1003", "A-1004", "A-1005"}
-    seen = set()
+@pytest.mark.parametrize("expected",[{"A-1001", "A-1002", "A-1003", "A-1004", "A-1005"}])
+def test_order_identity(load_json_data, expected):
+    data = load_json_data
+    actual = set()
     result = []
+
     for order in data["orders"]:
         oid = order.get("id")
         if not oid or not isinstance(oid, str):
             result.append("Missing or invalid order id")
-        elif oid in seen:
+        elif oid in actual:
             result.append(f"Duplicate order id '{oid}'")
         else:
-            seen.add(oid)
-    assert seen == expected_ids, "ID's are not matched"
+            actual.add(oid)
 
-def test_customer_email():
+    assert actual == expected, f"IDs are not matched. Got {actual}, expected {expected}"
+    assert not result, f"Issues found: {result}"
+
+@pytest.mark.parametrize("expected",[[{'A-1002'}, {'A-1003'}]])
+def test_customer_email(load_json_data, expected):
+    data = load_json_data
     out = []
     email_pattern = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
@@ -29,13 +32,12 @@ def test_customer_email():
         oid = order["id"]
         email = order.get("customer", {}).get("email")
 
-        if not email:
-            out.append(f"Order {oid} has no email")
-        elif not email_pattern.match(email):
-            out.append(f"Order {oid} has invalid email '{email}'")
-    return out
+        if not email or not email_pattern.match(email):
+            out.append({oid})
+    assert out == expected
 
-def test_lines_integrity():
+def test_lines_integrity(load_json_data):
+    data = load_json_data
     for order in data["orders"]:
         status = order["status"]
         lines = order["lines"]
@@ -48,7 +50,8 @@ def test_lines_integrity():
                     else:
                         pass
 
-def test_payment_or_refund_consistency():
+def test_payment_or_refund_consistency(load_json_data):
+    data = load_json_data
     passed, failed = [], []
     for order in data['orders']:
         id = order["id"]
@@ -66,24 +69,23 @@ def test_payment_or_refund_consistency():
                 passed.append(id)
             else:
                 failed.append(f"Order {id} refund {actual_refund} != expected {expected_refund}")
-    # print(passed, failed)
     return passed, failed
 
-def test_shipping():
+def test_shipping(load_json_data):
+    data = load_json_data
     orders = data["orders"]
     for order in orders:
         fee = order["shipping"]['fee']
         assert fee < 0, f"Order {order['id']} has invalid shipping fee {fee}"
 
-def test_orders_summary():
+def test_orders_summary(load_json_data):
+    data = load_json_data
     summary = {
         "total_orders": 0,
         "total_line_items": 0,
         "invalid_orders_count": 0,
         "problematic_orders": []
     }
-
-    # Use JSONPath to fetch orders
     orders_expr = parse("$.orders[*]")
     orders = [match.value for match in orders_expr.find(data)]
     summary["total_orders"] = len(orders)
